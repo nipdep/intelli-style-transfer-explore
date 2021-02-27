@@ -1,0 +1,4 @@
+outs:
+- md5: 326e1dbeeda29c7e478faf261b2586d6
+  size: 11079331
+  path: dcgan_dasc.pt

@@ -1,0 +1,4 @@
+outs:
+- md5: 43efb82845861efd6eedd6aeecdb0cb8
+  size: 14326032
+  path: dcgan_gen.pt
