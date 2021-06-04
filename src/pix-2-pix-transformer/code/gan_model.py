@@ -1,5 +1,6 @@
 #!usr/bin/env python3
 #%%
+from numpy.core.function_base import add_newdoc
 import tensorflow as tf
 from keras.initializers import RandomNormal
 from keras.models import Input, Model
@@ -17,19 +18,19 @@ def define_discriminator(image_shape):
     d = Conv2D(64, (4, 4), (2, 2), padding='same', kernel_initializer=init)(merged)
     d = LeakyReLU(alpha=0.2)(d)
     #c128
-    d = Conv2D(128, (4, 4), (2, 2), padding='same', kernel_initializer=init)(merged)
+    d = Conv2D(128, (4, 4), (2, 2), padding='same', kernel_initializer=init)(d)
     d = BatchNormalization()(d)
     d = LeakyReLU(alpha=0.2)(d) 
     #c256
-    d = Conv2D(256, (4, 4), (2, 2), padding='same', kernel_initializer=init)(merged)
+    d = Conv2D(256, (4, 4), (2, 2), padding='same', kernel_initializer=init)(d)
     d = BatchNormalization()(d)
     d = LeakyReLU(alpha=0.2)(d)
     #c512
-    d = Conv2D(512, (4, 4), (2, 2), padding='same', kernel_initializer=init)(merged)
+    d = Conv2D(512, (4, 4), (2, 2), padding='same', kernel_initializer=init)(d)
     d = BatchNormalization()(d)
     d = LeakyReLU(alpha=0.2)(d)
 
-    d = Conv2D(64, (4, 4), padding='same', kernel_initializer=init)(merged)
+    d = Conv2D(64, (4, 4), padding='same', kernel_initializer=init)(d)
     d = BatchNormalization()(d)
     d = LeakyReLU(alpha=0.2)(d)
 
@@ -42,10 +43,10 @@ def define_discriminator(image_shape):
     model.compile(loss='binary_crossentropy', optimizer=opt, loss_weights=[0.5])
     return model 
 
-model = define_discriminator((128, 128, 3,))
+model = define_discriminator((256,256,3,))
 model.summary()
 
-tf.keras.utils.plot_model(model=model, show_shapes=True, dpi=76)
+#tf.keras.utils.plot_model(model=model, show_shapes=True, dpi=76)
 
 def define_encoder_block(layer_in, n_filers, batchnorm=True):
     init = RandomNormal(stddev=0.02)
@@ -97,7 +98,7 @@ def define_generator(image_shape=(256,256,3)):
 gen = define_generator()
 gen.summary()
 
-tf.keras.utils.plot_model(model=gen, show_shapes=True, dpi=76)
+#tf.keras.utils.plot_model(model=gen, show_shapes=True, dpi=76)
 # %%
 
 def define_gan(g_model, d_model, image_shape):
@@ -111,3 +112,88 @@ def define_gan(g_model, d_model, image_shape):
     gan_model = Model(in_src, [dis_out, gen_out])
     opt = Adam(lr=0.002, beta_1=0.5)
     gan_model.compile(loss=['binary_crossentropy', 'mae'], optimizer=opt, loss_weights=[1,100])
+    return gan_model
+#%%
+from numpy.random import randint
+from numpy import ones, zeros, load
+
+def load_real_samples(filename):
+	data = load(filename)
+	X1, X2 = data['arr_0'], data['arr_1']
+	X1 = (X1 - 127.5) / 127.5
+	X2 = (X2 - 127.5) / 127.5
+	return [X1, X2]
+
+def generate_real_examples(dataset, n_samples, patch_shape):
+    trainA, trainB = dataset
+    ix = randint(0, trainA.shape[0], n_samples)
+    X1, X2 =  trainA[ix], trainB[ix]
+    y = ones((n_samples, patch_shape, patch_shape, 1))
+    return [X1, X2], y
+
+def generate_fake_examples(g_model, samples, patch_shape):
+    X = g_model.predict(samples)
+    y = zeros((len(X), patch_shape, patch_shape, 1))
+    return X, y   
+
+#%%
+from matplotlib import pyplot
+def summarize_performance(step, g_model, dataset, n_samples=3):
+    [X_realA,  X_realB], _ = generate_real_examples(dataset, 3, 1)
+    X_fakeB, _ = generate_fake_examples(g_model, X_realA, 1)
+    X_realA = (X_realA+1)/2.0
+    X_realB = (X_realB+1)/2.0
+    X_fakeB = (X_fakeB+1)/2.0
+
+    for i in range(n_samples):
+        pyplot.subplot(3, n_samples, 1+ i)
+        pyplot.axis("off")
+        pyplot.imshow(X_realA[i])
+
+    for i in range(n_samples):
+        pyplot.subplot(3, n_samples, 1 + n_samples + i)
+        pyplot.axis("off")
+        pyplot.imshow(X_fakeB[i])
+
+    for i in range(n_samples):
+        pyplot.subplot(3, n_samples, 1 + n_samples*2 + i)
+        pyplot.axis('off')
+        pyplot.imshow(X_realB[i])
+
+    
+    filename = 'plot_%06d.png'%(step+1)
+    pyplot.save(filename)
+    pyplot.close()
+
+    modelfile = 'gen_model_%06d.h5'%(step+1)
+    g_model.save(modelfile)
+    print('>Saved: %s and %s'%(filename,  modelfile))
+
+#%%
+
+def train(d_model, g_model, gan_model, dataset, n_epochs, n_batch=1):
+    n_patchs = d_model.output_shape[1]
+    trainA, trainB= dataset
+    bat_per_epoch = int(len(trainA)/n_batch)
+    n_steps = bat_per_epoch*n_epochs
+    for i in range(n_steps):
+        [X_realA, X_realB],y_real = generate_real_examples(dataset, n_batch, n_patchs)
+        X_fake, y_fake = generate_fake_examples(g_model, X_realA, n_patchs)
+        d_loss1 = d_model.train_on_batch([X_realA, X_realB],y_real)
+        d_loss2 = d_model.train_on_batch([X_realA, X_fake],y_fake)
+        g_loss, _, _ = gan_model.train_on_batch(X_realA, [y_real, X_realB])
+        print('>%d, d1[%.3f] d2[%.3f] g[%.3f]' % (i+1, d_loss1, d_loss2, g_loss))
+        if (i+1)%(bat_per_epoch*10)==10:
+            summarize_performance(i, g_model, dataset)
+
+# %%
+
+dataset = load_real_samples('../../../data/data/maps/maps_256.npz')
+print('Loaded : ', dataset[0].shape, dataset[1].shape)
+image_shape = dataset[0].shape[1:]
+d_model = define_discriminator(image_shape)
+g_model = define_generator(image_shape)
+gan_model = define_gan(g_model, d_model, image_shape)
+train(d_model, g_model, gan_model, dataset, n_epochs=3, n_batch=16)
+# %%
+
