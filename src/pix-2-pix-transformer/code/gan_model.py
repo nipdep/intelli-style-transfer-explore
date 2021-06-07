@@ -162,7 +162,7 @@ def summarize_performance(step, g_model, dataset, n_samples=3):
 
     
     filename = 'plot_%06d.png'%(step+1)
-    pyplot.save(filename)
+    pyplot.savefig(filename)
     pyplot.close()
 
     modelfile = 'gen_model_%06d.h5'%(step+1)
@@ -183,7 +183,7 @@ def train(d_model, g_model, gan_model, dataset, n_epochs, n_batch=1):
         d_loss2 = d_model.train_on_batch([X_realA, X_fake],y_fake)
         g_loss, _, _ = gan_model.train_on_batch(X_realA, [y_real, X_realB])
         print('>%d, d1[%.3f] d2[%.3f] g[%.3f]' % (i+1, d_loss1, d_loss2, g_loss))
-        if (i+1)%(bat_per_epoch*10)==10:
+        if ((i+1)%10)==9:
             summarize_performance(i, g_model, dataset)
 
 # %%
@@ -197,3 +197,5 @@ gan_model = define_gan(g_model, d_model, image_shape)
 train(d_model, g_model, gan_model, dataset, n_epochs=3, n_batch=16)
 # %%
 
+
+# %%
